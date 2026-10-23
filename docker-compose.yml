@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tendencies
+      POSTGRES_PASSWORD: tendencies
+      POSTGRES_DB: tendencies
+    ports:
+      - "5433:5432"
+    volumes:
+      - tendencies-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tendencies -d tendencies"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  tendencies-pg:

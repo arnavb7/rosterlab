@@ -1,0 +1,305 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Public Sleeper identity. Email, phone, and token fields from the user endpoint are never stored.
+model SleeperUser {
+  id          String   @id @default(cuid())
+  externalId  String   @unique
+  username    String?
+  displayName String?
+  avatar      String?
+  fetchedAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  memberships LeagueMembership[]
+}
+
+model LeagueSeason {
+  id               String   @id @default(cuid())
+  externalLeagueId String   @unique
+  sport            String
+  season           String
+  name             String
+  status           String
+  seasonType       String?
+  previousLeagueId String?
+  primaryDraftId   String?
+  avatar           String?
+  totalRosters     Int?
+  rosterPositions  Json
+  scoringSettings  Json
+  settings         Json
+  leagueMetadata   Json?
+  isDemo           Boolean  @default(false)
+  source           String   @default("sleeper")
+  ingestedAt       DateTime @default(now())
+  lastSyncedAt     DateTime?
+  dataCompleteness Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  memberships  LeagueMembership[]
+  rosters      RosterSnapshot[]
+  matchups     MatchupTeamWeek[]
+  transactions LeagueTransaction[]
+  drafts       Draft[]
+  tradedPicks  TradedPick[]
+
+  @@index([season])
+  @@index([previousLeagueId])
+}
+
+model LeagueMembership {
+  id             String       @id @default(cuid())
+  leagueSeasonId String
+  leagueSeason   LeagueSeason @relation(fields: [leagueSeasonId], references: [id], onDelete: Cascade)
+  sleeperUserId  String?
+  sleeperUser    SleeperUser? @relation(fields: [sleeperUserId], references: [id])
+  externalUserId String
+  displayName    String?
+  teamName       String?
+  avatar         String?
+  isOwner        Boolean      @default(false)
+
+  @@unique([leagueSeasonId, externalUserId])
+  @@index([externalUserId])
+}
+
+/// Current roster endpoint. This is not a historical roster snapshot.
+model RosterSnapshot {
+  id                     String       @id @default(cuid())
+  leagueSeasonId         String
+  leagueSeason           LeagueSeason @relation(fields: [leagueSeasonId], references: [id], onDelete: Cascade)
+  externalRosterId       Int
+  ownerExternalUserId    String?
+  coOwnerExternalUserIds String[]
+  players                String[]
+  starters               String[]
+  reserve                String[]
+  taxi                   String[]
+  keepers                Json?
+  settings               Json
+  snapshotKind           String
+  asOf                   DateTime
+  source                 String
+  incomplete             Boolean      @default(true)
+  incompleteReason       String?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  @@unique([leagueSeasonId, externalRosterId, snapshotKind])
+  @@index([leagueSeasonId])
+}
+
+model MatchupTeamWeek {
+  id               String       @id @default(cuid())
+  leagueSeasonId   String
+  leagueSeason     LeagueSeason @relation(fields: [leagueSeasonId], references: [id], onDelete: Cascade)
+  externalRosterId Int
+  week             Int
+  seasonType       String
+  matchupId        Int?
+  points           Float?
+  customPoints     Float?
+  players          String[]
+  starters         String[]
+  startersPoints   Json?
+  playersPoints    Json?
+  isPartial        Boolean      @default(false)
+  source           String
+  ingestedAt       DateTime     @default(now())
+
+  @@unique([leagueSeasonId, week, externalRosterId])
+  @@index([leagueSeasonId, week])
+}
+
+model LeagueTransaction {
+  id                    String       @id @default(cuid())
+  leagueSeasonId        String
+  leagueSeason          LeagueSeason @relation(fields: [leagueSeasonId], references: [id], onDelete: Cascade)
+  externalTransactionId String
+  type                  String
+  status                String
+  executed              Boolean
+  week                  Int?
+  importedWeek          Int
+  rosterIds             Int[]
+  consenterIds          Int[]
+  creatorExternalUserId String?
+  createdAtSource       DateTime?
+  statusUpdatedAtSource DateTime?
+  settings              Json?
+  metadata              Json?
+  source                String
+  ingestedAt            DateTime     @default(now())
+  assets                TransactionAsset[]
+
+  @@unique([leagueSeasonId, externalTransactionId])
+  @@index([leagueSeasonId, importedWeek])
+}
+
+model TransactionAsset {
+  id                   String            @id @default(cuid())
+  transactionId        String
+  transaction          LeagueTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  kind                 String
+  sequence             Int
+  playerExternalId     String?
+  rosterId             Int?
+  fromRosterId         Int?
+  toRosterId           Int?
+  pickSeason           String?
+  pickRound            Int?
+  pickOriginalRosterId Int?
+  pickPreviousRosterId Int?
+  pickOwnerRosterId    Int?
+  faabAmount           Int?
+
+  @@index([transactionId])
+  @@index([playerExternalId])
+}
+
+model Draft {
+  id             String       @id @default(cuid())
+  leagueSeasonId String
+  leagueSeason   LeagueSeason @relation(fields: [leagueSeasonId], references: [id], onDelete: Cascade)
+  externalDraftId String      @unique
+  status         String
+  type           String
+  sport          String
+  season         String
+  settings       Json
+  draftOrder     Json?
+  slotToRosterId Json?
+  startTime      DateTime?
+  source         String
+  picks          DraftPick[]
+
+  @@index([leagueSeasonId])
+}
+
+model DraftPick {
+  id                     String   @id @default(cuid())
+  draftId                String
+  draft                  Draft    @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  ordinal                Int
+  pickNo                 Int?
+  round                  Int?
+  draftSlot              Int?
+  rosterId               Int?
+  attributionSource      String
+  playerExternalId       String?
+  pickedByExternalUserId String?
+  isKeeper               Boolean?
+  playerName             String?
+  position               String?
+  nflTeam                String?
+  irregularities         String[]
+
+  @@unique([draftId, ordinal])
+  @@index([draftId, rosterId])
+}
+
+model TradedPick {
+  id                    String       @id @default(cuid())
+  leagueSeasonId        String
+  leagueSeason          LeagueSeason @relation(fields: [leagueSeasonId], references: [id], onDelete: Cascade)
+  season                String
+  round                 Int
+  originalRosterId      Int
+  previousOwnerRosterId Int?
+  ownerRosterId         Int
+
+  @@unique([leagueSeasonId, season, round, originalRosterId])
+}
+
+model Player {
+  id                 String    @id @default(cuid())
+  sleeperId          String    @unique
+  firstName          String?
+  lastName           String?
+  fullName           String?
+  position           String?
+  fantasyPositions   String[]
+  team               String?
+  status             String?
+  injuryStatus       String?
+  /// Sleeper search_rank. Not historical ADP. Do not present it as ADP.
+  searchRank         Int?
+  directoryFetchedAt DateTime?
+  source             String    @default("sleeper")
+  updatedAt          DateTime  @updatedAt
+
+  @@index([position])
+}
+
+/// Reserved for a verified Sleeper-to-supplemental crosswalk. Milestone 1 does not write rows.
+model PlayerIdentityMapping {
+  id             String   @id @default(cuid())
+  sleeperId      String?
+  source         String
+  sourcePlayerId String
+  confidence     String
+  provenance     String
+  createdAt      DateTime @default(now())
+
+  @@unique([source, sourcePlayerId])
+  @@index([sleeperId])
+}
+
+model ProviderCapability {
+  id                  String    @id
+  displayName         String
+  availableMetrics    Json
+  supportedSeasons    Json
+  latestDataTimestamp DateTime?
+  updateFrequency     String
+  licenseNotes        String
+  operationalStatus   String
+  limitations         Json
+  updatedAt           DateTime  @updatedAt
+}
+
+model ImportJob {
+  id               String    @id @default(cuid())
+  kind             String
+  status           String
+  externalLeagueId String
+  isDemo           Boolean   @default(false)
+  correction       Boolean   @default(false)
+  stage            String
+  completedUnits   Int       @default(0)
+  totalUnits       Int?
+  cacheHits        Int       @default(0)
+  cursor           Json
+  warnings         Json
+  error            String?
+  attemptCount     Int       @default(0)
+  retryAt          DateTime?
+  lockedBy         String?
+  lockedAt         DateTime?
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([externalLeagueId, status])
+}
+
+/// Latest retained source payload per resource key. Older copies are overwritten.
+model RawPayload {
+  id          String   @id @default(cuid())
+  provider    String
+  resource    String
+  externalKey String
+  body        Json
+  fetchedAt   DateTime
+
+  @@unique([provider, resource, externalKey])
+}
